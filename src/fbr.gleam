@@ -9,54 +9,69 @@ import snag.{type Result}
 
 import consts.{routes_folder}
 import errors.{map_file_error}
+import generator.{generate}
 import parser.{parse_route_files}
 import types.{type Route, InvalidRoute, Route, route_to_string}
 
 pub fn main() {
   case
     {
-      use files <- result.try(get_route_files())
+      use cwd <- result.try(get_cwd())
+      use files <- result.try(get_route_files(cwd))
       use routes <- result.try(parse_route_files(files))
+      let #(valid_routes, invalid_routes) = group_routes(routes)
 
-      Ok(routes)
+      print_routes(valid_routes, invalid_routes)
+
+      use content <- result.try(generate(
+        valid_routes,
+        cwd <> consts.router_file,
+      ))
+
+      Ok(content)
     }
   {
-    Error(err) -> snag.pretty_print(err) |> io.println_error
-    Ok(routes) -> {
-      let grouped =
-        routes
-        |> list.group(fn(route) {
-          case route {
-            InvalidRoute(..) -> "invalid"
-            Route(..) -> "valid"
-          }
-        })
-      let valid_routes =
-        dict.get(grouped, "valid")
-        |> result.unwrap([])
-        |> sort_routes
-      let invalid_routes = dict.get(grouped, "invalid") |> result.unwrap([])
-
-      io.println("Found the following valid routes:")
-      list.map(valid_routes, fn(route) { route_to_string(route) |> io.println })
-
-      io.println("")
-      io.println_error("Found the following invalid routes:")
-      list.map(invalid_routes, fn(route) {
-        route_to_string(route) |> io.println_error
-      })
+    Ok(content) -> {
+      io.println("\n######################\n" <> content)
 
       Nil
     }
+    Error(err) -> snag.pretty_print(err) |> io.println_error
   }
 }
 
-fn get_route_files() -> Result(List(String)) {
-  use cwd <- result.try(
-    simplifile.current_directory()
-    |> map_file_error("could not get current directory"),
-  )
+fn print_routes(valid: List(Route), invalid: List(Route)) {
+  io.println("Found the following valid routes:")
+  list.map(valid, fn(route) { route_to_string(route) |> io.println })
 
+  io.println("")
+  io.println_error("Found the following invalid routes:")
+  list.map(invalid, fn(route) { route_to_string(route) |> io.println_error })
+}
+
+fn group_routes(routes: List(Route)) -> #(List(Route), List(Route)) {
+  let grouped =
+    routes
+    |> list.group(fn(route) {
+      case route {
+        InvalidRoute(..) -> "invalid"
+        Route(..) -> "valid"
+      }
+    })
+  let valid_routes =
+    dict.get(grouped, "valid")
+    |> result.unwrap([])
+    |> sort_routes
+  let invalid_routes = dict.get(grouped, "invalid") |> result.unwrap([])
+  #(valid_routes, invalid_routes)
+}
+
+fn get_cwd() -> Result(String) {
+  simplifile.current_directory()
+  |> map_file_error("could not get current directory")
+}
+
+fn get_route_files(cwd: String) -> Result(List(String)) {
   let routes_dir = cwd <> routes_folder
 
   use files <- result.try(
