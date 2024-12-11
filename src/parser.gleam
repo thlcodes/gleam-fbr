@@ -13,8 +13,8 @@ import snag.{type Result}
 
 import errors.{map_file_error}
 import types.{
-  type Method, type Path, type Route, AnyMethod, InvalidRoute, Method, Rest,
-  Route, Static, Variable,
+  type Method, type Path, type Route, AnyMethod, Index, InvalidRoute, Method,
+  Rest, Route, Static, Variable,
 }
 
 pub fn parse_route_files(files: List(String)) -> Result(List(Route)) {
@@ -75,10 +75,21 @@ fn function_to_route(
   )
 
   let path = file_path_to_path(file)
+  let expect_num_params = get_num_fn_params_for_path(path)
+
+  let has_context_param = case params {
+    [_, second, ..] -> is_context_param(second)
+    _ -> False
+  }
+
+  let params = case has_context_param {
+    True -> list.drop(params, 2)
+    False -> list.drop(params, 1)
+  }
 
   // check of number of function params matches number of path variables
   use <- bool.guard(
-    get_num_fn_params_for_path(path) != { list.length(params) - 1 },
+    expect_num_params != { list.length(params) },
     Ok(
       Some(InvalidRoute(
         file,
@@ -91,10 +102,13 @@ fn function_to_route(
   // check if all params but the first are strings
   // TODO: support other types
   use <- bool.guard(
-    list.rest(params)
-      |> result.unwrap([])
+    params
       |> list.any(fn(param) {
         param.type_ != Some(glance.NamedType("String", None, []))
+        && param.type_
+        != Some(
+          glance.NamedType("List", None, [glance.NamedType("String", None, [])]),
+        )
       }),
     Ok(
       Some(InvalidRoute(
@@ -105,11 +119,23 @@ fn function_to_route(
     ),
   )
 
-  Ok(Some(Route(file, line, method, path)))
+  Ok(Some(Route(file, line, method, path, has_context_param)))
+}
+
+fn is_context_param(param: glance.FunctionParameter) -> Bool {
+  case param.name, param.label {
+    glance.Named("ctx"), None -> True
+    glance.Named("context"), None -> True
+    glance.Discarded("ctx"), None -> True
+    glance.Discarded("context"), None -> True
+    _, Some("ctx") -> True
+    _, Some("context") -> True
+    _, _ -> False
+  }
 }
 
 fn file_path_to_path(path: String) -> Path {
-  let assert Ok(replacer) = regex.from_string("(?:index)?(\\.gleam)")
+  let assert Ok(replacer) = regex.from_string("\\.gleam")
 
   path
   |> regex.replace(replacer, _, "")
@@ -117,10 +143,11 @@ fn file_path_to_path(path: String) -> Path {
   |> string.split("/")
   |> list.filter(fn(entry) { !string.is_empty(entry) })
   |> list.map(fn(entry) {
-    case string.ends_with(entry, "__"), string.ends_with(entry, "_") {
-      True, _ -> Rest(string.drop_right(entry, 2))
-      False, True -> Variable(string.drop_right(entry, 1))
-      _, _ -> Static(entry)
+    case entry, string.ends_with(entry, "__"), string.ends_with(entry, "_") {
+      "index", _, _ -> Index
+      _, True, _ -> Rest(string.drop_right(entry, 2))
+      _, False, True -> Variable(string.drop_right(entry, 1))
+      _, _, _ -> Static(entry)
     }
   })
 }

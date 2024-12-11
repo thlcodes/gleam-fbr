@@ -19,9 +19,9 @@ pub fn get(_req: wisp.Request, name: String) -> wisp.Response {
         <> ", "
         <> {
           case user.1 {
-            "m" -> "he is"
-            "w" -> "she is"
-            _ -> "they are"
+            "m" -> "he is "
+            "w" -> "she is "
+            _ -> "they are "
           }
         }
         <> { user.2 |> int.to_string }

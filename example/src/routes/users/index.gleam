@@ -10,7 +10,7 @@ pub fn get(_req: wisp.Request) -> wisp.Response {
     "<ul>"
     <> users
     |> list.map(fn(user) {
-      "<li><a href=\""
+      "<li><a href=\"/users/"
       <> { user.0 |> string.lowercase }
       <> "\">"
       <> user.0
